@@ -1,0 +1,89 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 47.4% 11.2%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* ゲーム用スタイル */
+.tetris-grid {
+  display: grid;
+  gap: 1px;
+  background-color: #000;
+  border: 2px solid #333;
+}
+
+.tetris-cell {
+  width: 20px;
+  height: 20px;
+  background-color: #111;
+}
+
+.tetris-cell.filled {
+  background-color: #ff6b6b;
+  border: 1px solid #fff;
+}
+
+/* テトリスピース色 */
+.piece-i { background-color: #00f5ff !important; }
+.piece-o { background-color: #ffff00 !important; }
+.piece-t { background-color: #800080 !important; }
+.piece-s { background-color: #00ff00 !important; }
+.piece-z { background-color: #ff0000 !important; }
+.piece-j { background-color: #0000ff !important; }
+.piece-l { background-color: #ffa500 !important; }
+
+/* アニメーション */
+@keyframes lineComplete {
+  0% { opacity: 1; }
+  50% { opacity: 0.5; background-color: #fff; }
+  100% { opacity: 0; }
+}
+
+.line-complete {
+  animation: lineComplete 0.5s ease-in-out;
+}
