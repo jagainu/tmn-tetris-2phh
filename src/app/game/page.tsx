@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Pause, Play, Home, RotateCcw } from 'lucide-react';
+import Link from 'next/link';
+import { Pause, Play, Home, RotateCw } from 'lucide-react';
 import { Difficulty } from '@/types/game';
 import { saveScore } from '@/lib/storage';
 import { TetrisGame, GameState } from '@/lib/tetris';
@@ -13,186 +14,163 @@ export default function GamePage() {
   const searchParams = useSearchParams();
   const difficulty = (searchParams.get('difficulty') as Difficulty) || 'medium';
   
-  const [game, setGame] = useState<TetrisGame | null>(null);
   const [gameState, setGameState] = useState<GameState | null>(null);
-  const [isPaused, setIsPaused] = useState(false);
-  const [isGameOver, setIsGameOver] = useState(false);
-  const gameLoopRef = useRef<NodeJS.Timeout | null>(null);
-  const requestRef = useRef<number | null>(null);
+  const [isGameStarted, setIsGameStarted] = useState(false);
+  const gameRef = useRef<TetrisGame | null>(null);
+  const [showGameOver, setShowGameOver] = useState(false);
 
-  // ゲームの初期化
+  // Initialize game
   useEffect(() => {
-    const tetrisGame = new TetrisGame(difficulty);
-    setGame(tetrisGame);
-    setGameState(tetrisGame.getState());
+    const game = new TetrisGame(difficulty);
+    gameRef.current = game;
+    
+    game.onStateChange((state) => {
+      setGameState(state);
+    });
+    
+    game.onGameOver((finalScore) => {
+      setShowGameOver(true);
+      // Save score
+      saveScore({
+        score: finalScore,
+        level: gameState?.level || 1,
+        lines: gameState?.lines || 0,
+        date: new Date().toISOString(),
+        difficulty,
+      });
+    });
+    
+    setGameState(game.getState());
+    
+    return () => {
+      game.destroy();
+    };
   }, [difficulty]);
 
-  // ゲームループ
-  const gameLoop = useCallback(() => {
-    if (!game || isPaused || isGameOver) return;
-
-    const moved = game.movePieceDown();
-    if (!moved) {
-      if (game.placePiece()) {
-        const linesCleared = game.clearLines();
-        if (linesCleared > 0) {
-          game.addScore(linesCleared);
-        }
-        if (game.spawnNewPiece()) {
-          setGameState({ ...game.getState() });
-        } else {
-          // ゲームオーバー
-          setIsGameOver(true);
-          const finalScore = game.getState().score;
-          saveScore(difficulty, finalScore);
-        }
-      }
+  // Handle keyboard input
+  const handleKeyPress = useCallback((event: KeyboardEvent) => {
+    if (!gameRef.current || !isGameStarted) return;
+    
+    switch (event.code) {
+      case 'ArrowLeft':
+        gameRef.current.moveLeft();
+        break;
+      case 'ArrowRight':
+        gameRef.current.moveRight();
+        break;
+      case 'ArrowDown':
+        gameRef.current.moveDown();
+        break;
+      case 'ArrowUp':
+        gameRef.current.rotate();
+        break;
+      case 'Space':
+        event.preventDefault();
+        gameRef.current.hardDrop();
+        break;
+      case 'KeyP':
+        togglePause();
+        break;
     }
-    setGameState({ ...game.getState() });
-  }, [game, isPaused, isGameOver, difficulty]);
+  }, [isGameStarted]);
 
-  // ゲームループの開始/停止
   useEffect(() => {
-    if (game && !isPaused && !isGameOver) {
-      const speed = game.getDropSpeed();
-      gameLoopRef.current = setInterval(gameLoop, speed);
-    } else {
-      if (gameLoopRef.current) {
-        clearInterval(gameLoopRef.current);
-        gameLoopRef.current = null;
-      }
-    }
-
-    return () => {
-      if (gameLoopRef.current) {
-        clearInterval(gameLoopRef.current);
-      }
-    };
-  }, [game, gameLoop, isPaused, isGameOver]);
-
-  // キーボード操作
-  useEffect(() => {
-    const handleKeyPress = (event: KeyboardEvent) => {
-      if (!game || isPaused || isGameOver) return;
-
-      switch (event.key) {
-        case 'ArrowLeft':
-          event.preventDefault();
-          game.movePieceLeft();
-          setGameState({ ...game.getState() });
-          break;
-        case 'ArrowRight':
-          event.preventDefault();
-          game.movePieceRight();
-          setGameState({ ...game.getState() });
-          break;
-        case 'ArrowDown':
-          event.preventDefault();
-          game.movePieceDown();
-          setGameState({ ...game.getState() });
-          break;
-        case 'ArrowUp':
-          event.preventDefault();
-          game.rotatePiece();
-          setGameState({ ...game.getState() });
-          break;
-        case ' ':
-          event.preventDefault();
-          game.dropPiece();
-          setGameState({ ...game.getState() });
-          break;
-        case 'Escape':
-          event.preventDefault();
-          handleTogglePause();
-          break;
-      }
-    };
-
     window.addEventListener('keydown', handleKeyPress);
-    return () => window.removeEventListener('keydown', handleKeyPress);
-  }, [game, isPaused, isGameOver]);
+    return () => {
+      window.removeEventListener('keydown', handleKeyPress);
+    };
+  }, [handleKeyPress]);
 
-  const handleTogglePause = () => {
-    if (isGameOver) return;
-    setIsPaused(!isPaused);
+  const startGame = () => {
+    gameRef.current?.start();
+    setIsGameStarted(true);
   };
 
-  const handleRestart = () => {
-    setIsGameOver(false);
-    setIsPaused(false);
-    const newGame = new TetrisGame(difficulty);
-    setGame(newGame);
-    setGameState(newGame.getState());
-  };
-
-  const handleGoHome = () => {
-    router.push('/');
-  };
-
-  const getDifficultyLabel = (difficulty: Difficulty) => {
-    switch (difficulty) {
-      case 'easy': return 'イージー';
-      case 'medium': return 'ミディアム';
-      case 'hard': return 'ハード';
+  const togglePause = () => {
+    if (!gameRef.current) return;
+    
+    if (gameState?.isPaused) {
+      gameRef.current.resume();
+    } else {
+      gameRef.current.pause();
     }
   };
 
-  const renderGrid = () => {
+  const resetGame = () => {
+    gameRef.current?.reset();
+    setIsGameStarted(false);
+    setShowGameOver(false);
+  };
+
+  const renderBoard = () => {
     if (!gameState) return null;
-
-    const { grid, currentPiece, currentPosition } = gameState;
-    const displayGrid = grid.map(row => [...row]);
-
-    // 現在のピースを描画
-    if (currentPiece && currentPosition) {
-      currentPiece.shape.forEach((row, y) => {
-        row.forEach((cell, x) => {
-          if (cell) {
-            const gridY = currentPosition.y + y;
-            const gridX = currentPosition.x + x;
-            if (gridY >= 0 && gridY < 20 && gridX >= 0 && gridX < 10) {
-              displayGrid[gridY][gridX] = currentPiece.type;
+    
+    const board = [...gameState.board];
+    
+    // Add current piece to display
+    if (gameState.currentPiece) {
+      const { shape, position } = gameState.currentPiece;
+      for (let y = 0; y < shape.length; y++) {
+        for (let x = 0; x < shape[y].length; x++) {
+          if (shape[y][x]) {
+            const boardY = position.y + y;
+            const boardX = position.x + x;
+            if (boardY >= 0 && boardY < 20 && boardX >= 0 && boardX < 10) {
+              board[boardY] = [...board[boardY]];
+              board[boardY][boardX] = gameState.currentPiece.type;
             }
           }
-        });
-      });
+        }
+      }
     }
-
+    
     return (
-      <div className="tetris-grid" style={{ gridTemplateColumns: 'repeat(10, 1fr)' }}>
-        {displayGrid.flat().map((cell, index) => (
-          <div
-            key={index}
-            className={clsx(
-              'tetris-cell',
-              cell && 'filled',
-              cell && `piece-${cell}`
-            )}
-          />
-        ))}
+      <div className="grid grid-cols-10 gap-0.5 bg-slate-900 p-2 rounded-lg border-2 border-slate-600">
+        {board.map((row, y) =>
+          row.map((cell, x) => (
+            <div
+              key={`${y}-${x}`}
+              className={clsx(
+                'w-6 h-6 rounded-sm border border-slate-700',
+                {
+                  'bg-slate-800': cell === 0,
+                  'bg-cyan-500': cell === 1,
+                  'bg-yellow-500': cell === 2,
+                  'bg-purple-500': cell === 3,
+                  'bg-green-500': cell === 4,
+                  'bg-red-500': cell === 5,
+                  'bg-blue-500': cell === 6,
+                  'bg-orange-500': cell === 7,
+                }
+              ))
+            />
+          ))
+        )}
       </div>
     );
   };
 
   const renderNextPiece = () => {
     if (!gameState?.nextPiece) return null;
-
-    const { shape, type } = gameState.nextPiece;
+    
+    const { shape } = gameState.nextPiece;
+    
     return (
-      <div className="bg-slate-800 rounded p-2">
-        <h3 className="text-sm font-bold mb-2">Next</h3>
-        <div 
-          className="grid gap-px"
-          style={{ gridTemplateColumns: `repeat(${shape[0].length}, 1fr)` }}
-        >
-          {shape.flat().map((cell, index) => (
-            <div
-              key={index}
-              className={clsx(
-                'w-4 h-4',
-                cell ? `piece-${type}` : 'bg-slate-900'
-              )}
-            />
+      <div className="bg-slate-800 p-4 rounded-lg">
+        <h3 className="text-sm font-semibold mb-2">Next</h3>
+        <div className="grid gap-0.5">
+          {shape.map((row, y) => (
+            <div key={y} className="flex gap-0.5">
+              {row.map((cell, x) => (
+                <div
+                  key={`${y}-${x}`}
+                  className={clsx(
+                    'w-4 h-4 rounded-sm',
+                    cell ? 'bg-white' : 'bg-slate-700'
+                  )}
+                />
+              ))}
+            </div>
           ))}
         </div>
       </div>
@@ -208,141 +186,128 @@ export default function GamePage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col lg:flex-row items-center justify-center gap-8 p-4">
-      {/* メインゲームエリア */}
-      <div className="flex flex-col items-center">
-        {/* ゲーム情報 */}
-        <div className="flex items-center justify-between w-full max-w-sm mb-4">
-          <div className="text-center">
-            <div className="text-sm text-gray-400">難易度</div>
-            <div className="font-bold">{getDifficultyLabel(difficulty)}</div>
-          </div>
-          <div className="text-center">
-            <div className="text-sm text-gray-400">スコア</div>
-            <div className="font-bold text-xl">{gameState.score.toLocaleString()}</div>
-          </div>
-          <div className="text-center">
-            <div className="text-sm text-gray-400">レベル</div>
-            <div className="font-bold">{gameState.level}</div>
-          </div>
+    <div className="min-h-screen flex flex-col items-center justify-center p-4">
+      <div className="max-w-6xl w-full">
+        {/* Header */}
+        <div className="text-center mb-6">
+          <h1 className="text-4xl font-bold mb-2">TETRIS</h1>
+          <p className="text-gray-400 capitalize">難易度: {difficulty}</p>
         </div>
 
-        {/* ゲームグリッド */}
-        <div className="relative">
-          {renderGrid()}
-          
-          {/* ゲームオーバー/ポーズオーバーレイ */}
-          {(isPaused || isGameOver) && (
-            <div className="absolute inset-0 bg-black bg-opacity-75 flex flex-col items-center justify-center">
-              {isPaused && (
-                <div className="text-center">
-                  <Pause className="w-16 h-16 mx-auto mb-4 text-yellow-400" />
-                  <h2 className="text-2xl font-bold mb-2">ポーズ中</h2>
-                  <p className="text-gray-300">Escキーで再開</p>
-                </div>
-              )}
-              {isGameOver && (
-                <div className="text-center">
-                  <h2 className="text-3xl font-bold mb-4 text-red-400">GAME OVER</h2>
-                  <p className="text-xl mb-2">最終スコア: {gameState.score.toLocaleString()}</p>
-                  <p className="text-gray-300 mb-6">スコアが保存されました</p>
-                </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left Panel - Controls & Info */}
+          <div className="space-y-4">
+            <div className="bg-slate-800/50 p-4 rounded-lg">
+              <h3 className="font-semibold mb-3">操作</h3>
+              <div className="space-y-2 text-sm">
+                <div>← → : 移動</div>
+                <div>↓ : 高速落下</div>
+                <div>↑ : 回転</div>
+                <div>Space : 瞬間落下</div>
+                <div>P : 一時停止</div>
+              </div>
+            </div>
+            
+            {renderNextPiece()}
+            
+            <div className="space-y-2">
+              <Link
+                href="/"
+                className="w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+              >
+                <Home className="w-4 h-4" />
+                ホームに戻る
+              </Link>
+            </div>
+          </div>
+
+          {/* Center - Game Board */}
+          <div className="flex flex-col items-center">
+            {renderBoard()}
+            
+            <div className="mt-4 space-x-2">
+              {!isGameStarted ? (
+                <button
+                  onClick={startGame}
+                  className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg transition-colors flex items-center gap-2"
+                >
+                  <Play className="w-4 h-4" />
+                  スタート
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={togglePause}
+                    className="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded-lg transition-colors flex items-center gap-2"
+                  >
+                    {gameState.isPaused ? (
+                      <><Play className="w-4 h-4" /> 再開</>
+                    ) : (
+                      <><Pause className="w-4 h-4" /> 一時停止</>
+                    )}
+                  </button>
+                  <button
+                    onClick={resetGame}
+                    className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors flex items-center gap-2"
+                  >
+                    <RotateCw className="w-4 h-4" />
+                    リセット
+                  </button>
+                </>
               )}
             </div>
-          )}
-        </div>
+          </div>
 
-        {/* コントロールボタン */}
-        <div className="flex gap-4 mt-4">
-          {!isGameOver && (
-            <button
-              onClick={handleTogglePause}
-              className="flex items-center gap-2 bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded font-bold transition-colors"
-            >
-              {isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
-              {isPaused ? '再開' : 'ポーズ'}
-            </button>
-          )}
-          {isGameOver && (
-            <button
-              onClick={handleRestart}
-              className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded font-bold transition-colors"
-            >
-              <RotateCcw className="w-4 h-4" />
-              再ゲーム
-            </button>
-          )}
-          <button
-            onClick={handleGoHome}
-            className="flex items-center gap-2 bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded font-bold transition-colors"
-          >
-            <Home className="w-4 h-4" />
-            ホーム
-          </button>
+          {/* Right Panel - Stats */}
+          <div className="space-y-4">
+            <div className="bg-slate-800/50 p-4 rounded-lg">
+              <h3 className="font-semibold mb-3">スコア</h3>
+              <div className="space-y-2">
+                <div className="flex justify-between">
+                  <span>得点</span>
+                  <span className="font-mono">{gameState.score.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>レベル</span>
+                  <span className="font-mono">{gameState.level}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>ライン</span>
+                  <span className="font-mono">{gameState.lines}</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* サイドパネル */}
-      <div className="flex flex-row lg:flex-col gap-4">
-        {/* Next Piece */}
-        <div className="bg-slate-900/50 backdrop-blur-sm rounded-xl p-4 border border-slate-700">
-          {renderNextPiece()}
-        </div>
-
-        {/* ゲーム統計 */}
-        <div className="bg-slate-900/50 backdrop-blur-sm rounded-xl p-4 border border-slate-700">
-          <h3 className="text-sm font-bold mb-3">統計</h3>
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-gray-400">ライン</span>
-              <span className="font-mono">{gameState.lines}</span>
+      {/* Game Over Modal */}
+      {showGameOver && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-slate-800 p-8 rounded-xl border border-slate-600 text-center max-w-md w-full mx-4">
+            <h2 className="text-3xl font-bold mb-4">ゲームオーバー</h2>
+            <div className="space-y-2 mb-6">
+              <div className="text-xl">最終スコア: {gameState.score.toLocaleString()}</div>
+              <div>レベル: {gameState.level}</div>
+              <div>ライン: {gameState.lines}</div>
             </div>
-            <div className="flex justify-between">
-              <span className="text-gray-400">レベル</span>
-              <span className="font-mono">{gameState.level}</span>
+            <div className="space-x-4">
+              <button
+                onClick={resetGame}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg transition-colors"
+              >
+                もう一度
+              </button>
+              <Link
+                href="/"
+                className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-6 rounded-lg transition-colors inline-block"
+              >
+                ホーム
+              </Link>
             </div>
           </div>
         </div>
-
-        {/* モバイル操作ボタン */}
-        <div className="lg:hidden bg-slate-900/50 backdrop-blur-sm rounded-xl p-4 border border-slate-700">
-          <h3 className="text-sm font-bold mb-3">操作</h3>
-          <div className="grid grid-cols-3 gap-2">
-            <div></div>
-            <button 
-              className="bg-slate-700 hover:bg-slate-600 p-2 rounded text-sm"
-              onClick={() => game?.rotatePiece()}
-            >
-              ↻
-            </button>
-            <div></div>
-            <button 
-              className="bg-slate-700 hover:bg-slate-600 p-2 rounded text-sm"
-              onClick={() => game?.movePieceLeft()}
-            >
-              ←
-            </button>
-            <button 
-              className="bg-slate-700 hover:bg-slate-600 p-2 rounded text-sm"
-              onClick={() => game?.movePieceDown()}
-            >
-              ↓
-            </button>
-            <button 
-              className="bg-slate-700 hover:bg-slate-600 p-2 rounded text-sm"
-              onClick={() => game?.movePieceRight()}
-            >
-              →
-            </button>
-          </div>
-          <button 
-            className="w-full bg-red-600 hover:bg-red-700 p-2 rounded text-sm mt-2"
-            onClick={() => game?.dropPiece()}
-          >
-            DROP
-          </button>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

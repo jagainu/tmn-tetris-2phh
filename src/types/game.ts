@@ -1,16 +1,22 @@
 export type Difficulty = 'easy' | 'medium' | 'hard';
 
 export interface GameScore {
-  difficulty: Difficulty;
   score: number;
+  level: number;
+  lines: number;
   date: string;
+  difficulty: Difficulty;
 }
 
-export type PieceType = 'i' | 'o' | 't' | 's' | 'z' | 'j' | 'l';
-
-export interface TetrominoShape {
-  shape: number[][];
-  type: PieceType;
+export interface GameState {
+  board: number[][];
+  currentPiece: Piece | null;
+  nextPiece: Piece | null;
+  score: number;
+  level: number;
+  lines: number;
+  isGameOver: boolean;
+  isPaused: boolean;
 }
 
 export interface Position {
@@ -18,13 +24,14 @@ export interface Position {
   y: number;
 }
 
-export interface GameState {
-  grid: (PieceType | null)[][];
-  currentPiece: TetrominoShape | null;
-  currentPosition: Position | null;
-  nextPiece: TetrominoShape | null;
-  score: number;
-  level: number;
-  lines: number;
-  isGameOver: boolean;
+export interface Piece {
+  shape: number[][];
+  position: Position;
+  type: number;
+}
+
+export interface DifficultyConfig {
+  dropInterval: number;
+  levelUpLines: number;
+  scoreMultiplier: number;
 }

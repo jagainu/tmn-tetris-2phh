@@ -1,10 +1,9 @@
 import { GameScore, Difficulty } from '@/types/game';
 
 const STORAGE_KEY = 'tetris-high-scores';
+const MAX_SCORES = 10;
 
-type HighScores = Record<Difficulty, GameScore[]>;
-
-export function getHighScores(): HighScores {
+export function getHighScores(): Record<Difficulty, GameScore[]> {
   if (typeof window === 'undefined') {
     return { easy: [], medium: [], hard: [] };
   }
@@ -21,43 +20,29 @@ export function getHighScores(): HighScores {
   return { easy: [], medium: [], hard: [] };
 }
 
-export function saveScore(difficulty: Difficulty, score: number): void {
+export function saveScore(score: GameScore): void {
   if (typeof window === 'undefined') return;
 
-  const highScores = getHighScores();
-  
-  const newScore: GameScore = {
-    difficulty,
-    score,
-    date: new Date().toISOString(),
-  };
-
-  // 該当する難易度のスコア配列に追加
-  if (!highScores[difficulty]) {
-    highScores[difficulty] = [];
-  }
-  
-  highScores[difficulty].push(newScore);
-  
-  // スコアの高い順でソート
-  highScores[difficulty].sort((a, b) => b.score - a.score);
-  
-  // 上位10件のみ保持
-  highScores[difficulty] = highScores[difficulty].slice(0, 10);
-
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(highScores));
+    const scores = getHighScores();
+    const difficultyScores = scores[score.difficulty] || [];
+    
+    difficultyScores.push(score);
+    difficultyScores.sort((a, b) => b.score - a.score);
+    difficultyScores.splice(MAX_SCORES);
+    
+    scores[score.difficulty] = difficultyScores;
+    
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(scores));
   } catch (error) {
-    console.error('Failed to save high score:', error);
+    console.error('Failed to save score:', error);
   }
 }
 
-export function clearHighScores(): void {
-  if (typeof window === 'undefined') return;
+export function isHighScore(score: number, difficulty: Difficulty): boolean {
+  const scores = getHighScores();
+  const difficultyScores = scores[difficulty] || [];
   
-  try {
-    localStorage.removeItem(STORAGE_KEY);
-  } catch (error) {
-    console.error('Failed to clear high scores:', error);
-  }
+  return difficultyScores.length < MAX_SCORES || 
+         score > (difficultyScores[difficultyScores.length - 1]?.score || 0);
 }
